@@ -1,6 +1,6 @@
 {
   "name": "vue-single-file-component-to-js",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "description": "Convert .vue file to .js",
   "main": "n",
   "dependencies": {
