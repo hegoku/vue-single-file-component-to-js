@@ -32,7 +32,7 @@ let convertFile = function (filepath) {
     }
     let css_script = '';
     if (style.length > 0) {
-        let css_script = `
+        css_script = `
 docReady(function(){
     var css = \`${css}\`;
     var head = document.getElementsByTagName('head')[0];
@@ -71,7 +71,7 @@ let addScopedData = function (node, scopedId) {
 let main = function () {
     let file = process.argv[2];
     let output = process.argv[3];
-    let stat = fs.lstatSync(file);
+    //let stat = fs.lstatSync(file);
     let new_content = `
 (function(funcName, baseObj) {
     // The public function name defaults to window.docReady
@@ -145,23 +145,45 @@ let main = function () {
         }
     }
 })("docReady", window);\n`; 
-    if (stat.isDirectory()) {
-        let files = fs.readdirSync(file);
-        for (let i = 0; i < files.length; i++) {
-            let new_file = path.resolve(path.join(file, files[i]));
-            stat = fs.lstatSync(path.resolve(path.join(file, files[i])));
-            if (stat.isFile()) {
-                new_content += convertFile(new_file);
-            }
-        }
-        console.log(files);
-    } else {
-        new_content = convertFile(file);
-    }
+    new_content += iteratorFile(file);
+    // if (stat.isDirectory()) {
+    //     let files = fs.readdirSync(file);
+    //     for (let i = 0; i < files.length; i++) {
+    //         let new_file = path.resolve(path.join(file, files[i]));
+    //         stat = fs.lstatSync(path.resolve(path.join(file, files[i])));
+    //         if (stat.isFile()) {
+    //             new_content += convertFile(new_file);
+    //         }
+    //     }
+    //     console.log(files);
+    // } else {
+    //     new_content = convertFile(file);
+    // }
     fs.writeFileSync(path.resolve(output), new_content);
     console.log("编译完成\n");
 }
 
+let iteratorFile = function (file) {
+    let stat = fs.lstatSync(file);
+    let new_content = '';
+    if (stat.isDirectory()) {
+        let files = fs.readdirSync(file);
+        for (let i = 0; i < files.length; i++) {
+            let new_file = path.resolve(path.join(file, files[i]));
+            new_content += iteratorFile(new_file);
+            // stat = fs.lstatSync(path.resolve(path.join(file, files[i])));
+            // if (stat.isFile()) {
+            //     new_content += convertFile(new_file);
+            // } else {
+            //     new_content += iteratorFile(new_file);
+            // }
+        }
+        return new_content;
+    } else {
+        console.log(file);
+        return convertFile(file);
+    }
+}
 
 
 main();
@@ -170,7 +192,7 @@ if (process.argv[4] == '--watch') {
     let watch_path = process.argv[2];
     let stat=fs.lstatSync(watch_path);
     if (stat.isDirectory()) {
-        watch_path = path.join(watch_path,'/**.vue');
+        watch_path = path.join(watch_path,'/**/**.vue');
     }
     watch(watch_path, function () {
         main(); 
