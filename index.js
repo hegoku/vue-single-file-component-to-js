@@ -13,7 +13,7 @@ let convertFile = function (filepath) {
     let template = parsed.template ? parsed.template.content : '';
     let script = parsed.script ? parsed.script.content : '';
     let style = parsed.styles.length > 0 ? parsed.styles : [];
-    
+    let importStatement = getScriptImportStatement(script);
     
     let templateEscaped = template.trim().replace(/`/g, '\\`');
     let scriptEscaped = script.substring(script.indexOf("export default"));
@@ -49,7 +49,7 @@ docReady(function(){
     
     
     let scriptWithTemplate = scriptEscaped.replace(/export default ?\{/, `{\n    template:\`${templateEscaped}\`,`);
-    let script_instance = eval('(' + scriptWithTemplate + ')');
+    let script_instance = eval(importStatement + '(' + scriptWithTemplate + ')');
     let component_name = path.basename(filepath, '.vue');
     if (script_instance.name) {
         component_name = script_instance.name;
@@ -66,6 +66,16 @@ let addScopedData = function (node, scopedId) {
     for (let i = 0; i < node.childNodes.length; i++) {
         addScopedData(node.childNodes[i], scopedId);
     }
+};
+
+let getScriptImportStatement = function (script) {
+    let group = script.match(/import (.*) from (.*);/ig);
+    let importStatement = '';
+    if (group == null) return '';
+    for (var item of group) {
+        importStatement+='var '+item.replace(/(import )(.*)( from )(.*);/, '$2')+'="";';
+    }
+    return importStatement;
 };
 
 let main = function () {
