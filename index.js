@@ -49,14 +49,21 @@ docReady(function(){
     
     
     let scriptWithTemplate = scriptEscaped.replace(/export default ?\{/, `{\n    template:\`${templateEscaped}\`,`);
-    let script_instance = eval(importStatement + '(' + scriptWithTemplate + ')');
+
+    let importStatementVar = '';
+    for (let i in importStatement) {
+        importStatementVar += `var ${i}='';`;
+    }
+    let script_instance = eval(importStatementVar + '(' + scriptWithTemplate + ')');
+    
     let component_name = path.basename(filepath, '.vue');
     if (script_instance.name) {
         component_name = script_instance.name;
     }
     
     let final_js = `var ${component_name}=${scriptWithTemplate};\n`;
-    return final_js + css_script;
+    //return { name: component_name, imports: importStatement };
+    return { name: component_name, js: final_js + css_script, imports: importStatement };
 };
 
 
@@ -70,10 +77,13 @@ let addScopedData = function (node, scopedId) {
 
 let getScriptImportStatement = function (script) {
     let group = script.match(/import (.*) from (.*);/ig);
-    let importStatement = '';
-    if (group == null) return '';
+    let importStatement = {};
+    if (group == null) return {};
     for (var item of group) {
-        importStatement+='var '+item.replace(/(import )(.*)( from )(.*);/, '$2')+'="";';
+        let name = item.replace(/(import )(.*)( from )(.*);/, '$2');
+        let filepath = item.replace(/(import )(.*)( from )[\'"](.*)[\'"];/, '$4');
+        importStatement[name] = filepath;
+        //importStatement+='var '+item.replace(/(import )(.*)( from )(.*);/, '$2')+'="";';
     }
     return importStatement;
 };
@@ -155,43 +165,62 @@ let main = function () {
         }
     }
 })("docReady", window);\n`; 
-    new_content += iteratorFile(file);
-    // if (stat.isDirectory()) {
-    //     let files = fs.readdirSync(file);
-    //     for (let i = 0; i < files.length; i++) {
-    //         let new_file = path.resolve(path.join(file, files[i]));
-    //         stat = fs.lstatSync(path.resolve(path.join(file, files[i])));
-    //         if (stat.isFile()) {
-    //             new_content += convertFile(new_file);
-    //         }
-    //     }
-    //     console.log(files);
-    // } else {
-    //     new_content = convertFile(file);
-    // }
+    let component_list = [];
+    let import_list_use_count = [];
+    //new_content += iteratorFile(file);
+    iteratorFile(file, component_list);
+    for (let key in component_list) {
+        if (import_list_use_count[key] == undefined) {
+            import_list_use_count[key] = 0; 
+        }
+        for (let c in component_list[key].imports) {
+            if (import_list_use_count[c] == undefined ) {
+                import_list_use_count[c] = 1; 
+            } else {
+                import_list_use_count[c]++; 
+            }
+        }
+    }
+    //console.log(component_list);
+    let sorted_import_list = [];
+    for (let i in import_list_use_count) {
+        sorted_import_list.push({ name: i, count: import_list_use_count[i] });
+    }
+    //按照被import次数降序
+    for (let i = 0; i < sorted_import_list.length; i++) {
+        for (let j = i+1; j < sorted_import_list.length; j++) {
+            if (sorted_import_list[i].count < sorted_import_list[j].count) {
+                let tmp = sorted_import_list[i];
+                sorted_import_list[i] = sorted_import_list[j];
+                sorted_import_list[j] = tmp;
+            }
+        }
+    }
+    for (let item of sorted_import_list) {
+        if (component_list[item.name] != undefined) {
+            new_content += component_list[item.name].js; 
+        }
+    }
     fs.writeFileSync(path.resolve(output), new_content);
     console.log("编译完成\n");
 }
 
-let iteratorFile = function (file) {
+let iteratorFile = function (file, component_list) {
     let stat = fs.lstatSync(file);
     let new_content = '';
     if (stat.isDirectory()) {
         let files = fs.readdirSync(file);
         for (let i = 0; i < files.length; i++) {
             let new_file = path.resolve(path.join(file, files[i]));
-            new_content += iteratorFile(new_file);
-            // stat = fs.lstatSync(path.resolve(path.join(file, files[i])));
-            // if (stat.isFile()) {
-            //     new_content += convertFile(new_file);
-            // } else {
-            //     new_content += iteratorFile(new_file);
-            // }
+            iteratorFile(new_file, component_list);
+            //new_content += iteratorFile(new_file);
         }
-        return new_content;
+        //return new_content;
     } else {
         console.log(file);
-        return convertFile(file);
+        let c = convertFile(file);
+        component_list[c.name] = c;
+        //return convertFile(file);
     }
 }
 
