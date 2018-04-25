@@ -1,92 +1,8 @@
-const compiler = require('@vue/component-compiler-utils');
+const convertFile = require('./convertFile');
 const fs = require('fs');
 const path = require('path');
-const jsdom = require('jsdom');
-const hash = require('hash-sum');
-const { JSDOM } = jsdom;
+const layout = require('./layout');
 const watch = require('gulp-watch');
-
-let convertFile = function (filepath) {
-    let content = fs.readFileSync(filepath).toString();
-    let parsed = compiler.parse({ source: content, needMap: false });
-    
-    let template = parsed.template ? parsed.template.content : '';
-    let script = parsed.script ? parsed.script.content : '';
-    let style = parsed.styles.length > 0 ? parsed.styles : [];
-    let importStatement = getScriptImportStatement(script);
-    
-    let templateEscaped = template.trim().replace(/`/g, '\\`');
-    let scriptEscaped = script.substring(script.indexOf("export default"));
-    let dom = new JSDOM(templateEscaped);
-    let unique_data_v = 'data-v-' + hash(path.basename(filepath) + content);
-    addScopedData(dom.window.document.body.firstChild, unique_data_v);
-
-    templateEscaped = dom.window.document.body.innerHTML;
-
-    //处理style
-    let css = '';
-    for (let i = 0; i < style.length; i++) {
-        let a = compiler.compileStyle({ source: style[i].content, id: unique_data_v, scoped: style[i].scoped == true });
-        let code = a.code.replace(/\n/g, '');
-        css += code;
-    }
-    let css_script = '';
-    if (style.length > 0) {
-        css_script = `
-docReady(function(){
-    var css = \`${css}\`;
-    var head = document.getElementsByTagName('head')[0];
-    var style = document.createElement('style');
-    style.type = 'text/css';
-    if(style.styleSheet){
-        style.styleSheet.cssText = css;
-    }else{
-        style.appendChild(document.createTextNode(css));
-    }
-    head.appendChild(style);
-});\n`; 
-    }
-    
-    
-    let scriptWithTemplate = scriptEscaped.replace(/export default ?\{/, `{\n    template:\`${templateEscaped}\`,`);
-
-    let importStatementVar = '';
-    for (let i in importStatement) {
-        importStatementVar += `var ${i}='';`;
-    }
-    let script_instance = eval(importStatementVar + '(' + scriptWithTemplate + ')');
-    
-    let component_name = path.basename(filepath, '.vue');
-    if (script_instance.name) {
-        component_name = script_instance.name;
-    }
-    
-    let final_js = `var ${component_name}=${scriptWithTemplate};\n`;
-    //return { name: component_name, imports: importStatement };
-    return { name: component_name, js: final_js + css_script, imports: importStatement };
-};
-
-
-let addScopedData = function (node, scopedId) {
-    if (!node.setAttribute) return;
-    node.setAttribute(scopedId, '');
-    for (let i = 0; i < node.childNodes.length; i++) {
-        addScopedData(node.childNodes[i], scopedId);
-    }
-};
-
-let getScriptImportStatement = function (script) {
-    let group = script.match(/import (.*) from (.*);/ig);
-    let importStatement = {};
-    if (group == null) return {};
-    for (var item of group) {
-        let name = item.replace(/(import )(.*)( from )(.*);/, '$2');
-        let filepath = item.replace(/(import )(.*)( from )[\'"](.*)[\'"];/, '$4');
-        importStatement[name] = filepath;
-        //importStatement+='var '+item.replace(/(import )(.*)( from )(.*);/, '$2')+'="";';
-    }
-    return importStatement;
-};
 
 let main = function () {
     let file = process.argv[2];
@@ -182,27 +98,54 @@ let main = function () {
         }
     }
     //console.log(component_list);
-    let sorted_import_list = [];
+    // let sorted_import_list = [];
+    // for (let i in import_list_use_count) {
+    //     sorted_import_list.push({ name: i, count: import_list_use_count[i] });
+    // }
+    // //按照被import次数降序
+    // for (let i = 0; i < sorted_import_list.length; i++) {
+    //     for (let j = i+1; j < sorted_import_list.length; j++) {
+    //         if (sorted_import_list[i].count < sorted_import_list[j].count) {
+    //             let tmp = sorted_import_list[i];
+    //             sorted_import_list[i] = sorted_import_list[j];
+    //             sorted_import_list[j] = tmp;
+    //         }
+    //     }
+    // }
+    // for (let item of sorted_import_list) {
+    //     if (component_list[item.name] != undefined) {
+    //         new_content += component_list[item.name].js; 
+    //     }
+    // }
+    let import_layout = new layout();
+    let level0_import = [];
     for (let i in import_list_use_count) {
-        sorted_import_list.push({ name: i, count: import_list_use_count[i] });
+        if (import_list_use_count[i] != 0) continue;
+        if (component_list[i] == undefined) continue;
+        level0_import[i] = '';
     }
-    //按照被import次数降序
-    for (let i = 0; i < sorted_import_list.length; i++) {
-        for (let j = i+1; j < sorted_import_list.length; j++) {
-            if (sorted_import_list[i].count < sorted_import_list[j].count) {
-                let tmp = sorted_import_list[i];
-                sorted_import_list[i] = sorted_import_list[j];
-                sorted_import_list[j] = tmp;
+    iteratorImport(0, level0_import, component_list, import_layout);
+    let final_layout = import_layout.data.reverse();
+    console.log(final_layout);
+    for (let i of final_layout) {
+        for (let j of i) {
+            if (component_list[j] != undefined) {
+                new_content += component_list[j].js; 
             }
         }
     }
-    for (let item of sorted_import_list) {
-        if (component_list[item.name] != undefined) {
-            new_content += component_list[item.name].js; 
-        }
-    }
+    
     fs.writeFileSync(path.resolve(output), new_content);
     console.log("编译完成\n");
+}
+
+let iteratorImport = function (level, import_list, component_list, import_layout) {
+    for (let i in import_list) {
+        if (component_list[i] == undefined) continue;
+        let current = component_list[i];
+        import_layout.add(level, i);
+        iteratorImport(level+1, current.imports, component_list, import_layout);
+    }
 }
 
 let iteratorFile = function (file, component_list) {
