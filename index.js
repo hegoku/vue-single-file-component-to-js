@@ -126,7 +126,6 @@ let main = function () {
     }
     iteratorImport(0, level0_import, component_list, import_layout);
     let final_layout = import_layout.data.reverse();
-    console.log(final_layout);
     for (let i of final_layout) {
         for (let j of i) {
             if (component_list[j] != undefined) {
